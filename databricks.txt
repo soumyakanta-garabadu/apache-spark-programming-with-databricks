@@ -1,0 +1,945 @@
+
+1.CREATE WIDGET TEXT state DEFAULT "CA"
+2.%sql
+SELECT *
+FROM events
+WHERE geo.state = getArgument("state")
+3.REMOVE WIDGET state
+4.To create widgets in Python, Scala, and R, use the DBUtils module: dbutils.widgets
+dbutils.widgets.text("name", "Brickster", "Name")
+dbutils.widgets.multiselect("colors", "orange", ["red", "orange", "black", "blue"], "Traffic Sources")
+name = dbutils.widgets.get("name")
+colors = dbutils.widgets.get("colors").split(",")
+
+html = "<div>Hi {}! Select your color preference.</div>".format(name)
+for c in colors:
+    html += """<label for="{}" style="color:{}"><input type="radio"> {}</label><br>""".format(c, c, c)
+
+displayHTML(html)
+5.Remove all widgets
+dbutils.widgets.removeAll()
+6.View the database name
+print(database_name)
+7. Create Table on db
+spark.sql(f"SET c.events_path = {events_path}")
+%sql
+CREATE TABLE IF NOT EXISTS events
+USING DELTA
+OPTIONS (path = "${c.events_path}");
+8. The Databricks File System (DBFS) is a virtual file system that allows you to treat cloud object storage as though it were local files and directories on the cluster.
+Run file system commands on DBFS using the magic command: %fs
+-%fs ls
+-%fs mounts
+-%fs ls /databricks-datasets
+-%fs head /databricks-datasets/README.md
+9. Access the files created in dbfs
+dbutils.fs.put("/FileStore/my-stuff/my-file.txt", "This is the actual text that will be saved to disk. Like a 'Hello world!' example")
+https://<databricks-instance>/files/my-stuff/my-file.txt?o= --where the number after o= is the same as in your URL.
+10.Render cell as Markdown using the magic command: %md
+%md ## Access DBFS (Databricks File System)
+The <a href="https://docs.databricks.com/data/databricks-file-system.html" target="_blank">Databricks File System</a> (DBFS) is a virtual file system that allows you to treat cloud object storage as though it were local files and directories on the cluster.
+
+Run file system commands on DBFS using the magic command: **`%fs`**
+11.Render HTML using the function: displayHTML (available in Python, Scala, and R)
+html = """<h1 style="color:orange;text-align:center;font-family:Courier">Render HTML</h1>"""
+12.Run shell commands on the driver using the magic command: %sh
+%sh ps | grep 'java'
+13.%run command to run another notebook
+%run ../Includes/Classroom-Setup
+14. Execute Sql Queries
+%sql
+SELECT name, price
+FROM products
+WHERE price < 200
+ORDER BY price
+15.display table thorugh spark
+display(spark
+        .table("products")
+        .select("name", "price")
+        .where("price < 200")
+        .orderBy("price")
+       )
+16.In Databricks notebooks, the SparkSession is created for you, stored in a variable called spark.
+17.SparkSession Methods
+Method-->	Description
+sql		Returns a DataFrame representing the result of the given query
+table		Returns the specified table as a DataFrame
+read		Returns a DataFrameReader that can be used to read data in as a DataFrame
+range		Create a DataFrame with a column containing elements in a range from start to end (exclusive) with step value and number of partitions
+createDataFrame	Creates a DataFrame from a list of tuples, primarily used for testing
+18.Use SparkSession to run SQL
+result_df = spark.sql("""
+SELECT name, price
+FROM products
+WHERE price < 200
+ORDER BY price
+""")
+
+display(result_df)
+19.We can use display() to output the results of a dataframe.
+budget_df = (spark
+             .table("products")
+             .select("name", "price")
+             .where("price < 200")
+             .orderBy("price")
+            )
+display(budget_df)
+20.Access a dataframe's schema using the schema attribute.
+budget_df.schema
+budget_df.printSchema()
+21.->Transformations:
+When we created budget_df, we used a series of DataFrame transformation methods e.g. select, where, orderBy.
+
+products_df
+  .select("name", "price")
+  .where("price < 200")
+  .orderBy("price")
+
+Transformations operate on and return DataFrames, allowing us to chain transformation methods together to construct new DataFrames. However, these operations can't execute on their own, as transformation methods are lazily evaluated.
+
+Running the following cell does not trigger any computation.
+->Actions
+Conversely, DataFrame actions are methods that trigger computation. Actions are needed to trigger the execution of any DataFrame transformations.
+
+The show action causes the following cell to execute transformations.
+(products_df
+  .select("name", "price")
+  .where("price < 200")
+  .orderBy("price")
+  .show())
+22.Dataframe Actions
+Method	-->		Description
+show			Displays the top n rows of DataFrame in a tabular form
+count			Returns the number of rows in the DataFrame
+describe, summary	Computes basic statistics for numeric and string columns
+first, head		Returns the the first row
+collect			Returns an array that contains all rows in this DataFrame
+take			Returns an array of the first n rows in the DataFrame
+23.Convert between DataFrames and SQL
+createOrReplaceTempView creates a temporary view based on the DataFrame. 
+The lifetime of the temporary view is tied to the SparkSession that was used to create the DataFrame.
+budget_df.createOrReplaceTempView("budget")
+display(spark.sql("SELECT * FROM budget"))
+24. use of Assert
+verify_rows = mac_sql_df.take(5)
+assert (mac_sql_df.select("device").distinct().count() == 1 and len(verify_rows) == 5 and verify_rows[0]['device'] == "macOS"), "Incorrect filter condition"
+assert (verify_rows[4]['event_timestamp'] == 1592539226602157), "Incorrect sorting"
+del verify_rows
+print("All test pass")
+25. Read from CSV
+users_df = (spark
+           .read
+           .option("sep", "\t")
+           .option("header", True)
+           .option("inferSchema", True)
+           .csv(users_csv_path)
+          ) or
+users_df = (spark
+           .read
+           .csv(users_csv_path, sep="\t", header=True, inferSchema=True)
+          )
+26. Read with Schema Created Manually
+from pyspark.sql.types import LongType, StringType, StructType, StructField
+user_defined_schema = StructType([
+    StructField("user_id", StringType(), True),
+    StructField("user_first_touch_timestamp", LongType(), True),
+    StructField("email", StringType(), True)
+])
+users_df = (spark
+           .read
+           .option("sep", "\t")
+           .option("header", True)
+           .schema(user_defined_schema)
+           .csv(users_csv_path)
+          )
+27. Alternatively, define the schema using data definition language (DDL) syntax.
+ddl_schema = "user_id string, user_first_touch_timestamp long, email string"
+
+users_df = (spark
+           .read
+           .option("sep", "\t")
+           .option("header", True)
+           .schema(ddl_schema)
+           .csv(users_csv_path)
+          )
+28. Read from Json File
+events_json_path = f"{datasets_dir}/events/events-500k.json"
+
+events_df = (spark
+            .read
+            .option("inferSchema", True)
+            .json(events_json_path)
+           )
+
+events_df.printSchema()
+29. Read data faster by creating a StructType with the schema names and data types
+from pyspark.sql.types import ArrayType, DoubleType, IntegerType, LongType, StringType, StructType, StructField
+
+user_defined_schema = StructType([
+    StructField("device", StringType(), True),
+    StructField("ecommerce", StructType([
+        StructField("purchaseRevenue", DoubleType(), True),
+        StructField("total_item_quantity", LongType(), True),
+        StructField("unique_items", LongType(), True)
+    ]), True),
+    StructField("event_name", StringType(), True),
+    StructField("event_previous_timestamp", LongType(), True),
+    StructField("event_timestamp", LongType(), True),
+    StructField("geo", StructType([
+        StructField("city", StringType(), True),
+        StructField("state", StringType(), True)
+    ]), True),
+    StructField("items", ArrayType(
+        StructType([
+            StructField("coupon", StringType(), True),
+            StructField("item_id", StringType(), True),
+            StructField("item_name", StringType(), True),
+            StructField("item_revenue_in_usd", DoubleType(), True),
+            StructField("price_in_usd", DoubleType(), True),
+            StructField("quantity", LongType(), True)
+        ])
+    ), True),
+    StructField("traffic_source", StringType(), True),
+    StructField("user_first_touch_timestamp", LongType(), True),
+    StructField("user_id", StringType(), True)
+])
+
+events_df = (spark
+            .read
+            .schema(user_defined_schema)
+            .json(events_json_path)
+           )
+30. Transfer value between python and scala
+# Step 1 - use this trick to transfer a value (the dataset path) between Python and Scala using the shared spark-config
+spark.conf.set("com.whatever.your_scope.events_path", events_json_path)
+%scala
+// Step 2 - pull the value from the config (or copy & paste it)
+val eventsJsonPath = spark.conf.get("com.whatever.your_scope.events_path")
+
+// Step 3 - Read in the JSON, but let it infer the schema
+val eventsSchema = spark.read
+                        .option("inferSchema", true)
+                        .json(eventsJsonPath)
+                        .schema.toDDL
+
+// Step 4 - print the schema, select it, and copy it.
+println("="*80)
+println(eventsSchema)
+println("="*80)
+31. DataFrameWriter
+Interface used to write a DataFrame to external storage systems
+
+(df
+  .write
+  .option("compression", "snappy")
+  .mode("overwrite")
+  .parquet(output_dir)
+)
+
+DataFrameWriter is accessible through the SparkSession attribute write. This class includes methods to write DataFrames to different external storage systems.
+users_output_dir = working_dir + "/users.parquet"
+
+(users_df
+ .write
+ .option("compression", "snappy")
+ .mode("overwrite")
+ .parquet(users_output_dir)
+)
+display(
+    dbutils.fs.ls(users_output_dir)
+)
+(users_df
+ .write
+ .parquet(users_output_dir, compression="snappy", mode="overwrite")
+)
+32. Write DataFrames to tables
+events_df.write.mode("overwrite").saveAsTable("events")
+33. Delta Lake's Key Features
+ACID transactions
+Scalable metadata handling
+Unified streaming and batch processing
+Time travel (data versioning)
+Schema enforcement and evolution
+Audit history
+Parquet format
+Compatible with Apache Spark API
+34. Write Results to Delta Lake
+events_output_path = working_dir + "/delta/events"
+
+(events_df
+ .write
+ .format("delta")
+ .mode("overwrite")
+ .save(events_output_path)
+)
+35. Read from Delta Table
+events_df = spark.read.format("delta").load(events_path)
+display(events_df)
+36. Columns on DataFrame
+A Column is a logical construction that will be computed based on the data in a DataFrame using an expression
+Construct a new Column based on existing columns in a DataFrame
+--Accessing Columns
+from pyspark.sql.functions import col
+
+print(events_df.device)
+print(events_df["device"])
+print(col("device"))
+--Scala supports an additional syntax for creating a new Column based on existing columns in a DataFrame
+%scala
+$"device"
+37.Column Operators and Methods
+Method				Description
+*, + , <, >=			Math and comparison operators
+==, !=				Equality and inequality tests (Scala operators are === and =!=)
+alias				Gives the column an alias
+cast, astype			Casts the column to a different data type
+isNull, isNotNull, isNan	Is null, is not null, is NaN
+asc, desc			Returns a sort expression based on ascending/descending order of the column
+38.Create complex expressions with existing columns, operators, and methods.
+col("ecommerce.purchase_revenue_in_usd") + col("ecommerce.total_item_quantity")
+col("event_timestamp").desc()
+(col("ecommerce.purchase_revenue_in_usd") * 100).cast("int")
+
+rev_df = (events_df
+         .filter(col("ecommerce.purchase_revenue_in_usd").isNotNull())
+         .withColumn("purchase_revenue", (col("ecommerce.purchase_revenue_in_usd") * 100).cast("int"))
+         .withColumn("avg_purchase_revenue", col("ecommerce.purchase_revenue_in_usd") / col("ecommerce.total_item_quantity"))
+         .sort(col("avg_purchase_revenue").desc())
+        )
+
+display(rev_df)
+39. DataFrame Transformation Methods
+Method	-->			Description
+select				Returns a new DataFrame by computing given expression for each element
+drop				Returns a new DataFrame with a column dropped
+withColumnRenamed		Returns a new DataFrame with a column renamed
+withColumn			Returns a new DataFrame by adding a column or replacing the existing column that has the same name
+filter, where			Filters rows using the given condition
+sort, orderBy			Returns a new DataFrame sorted by the given expressions
+dropDuplicates, distinct	Returns a new DataFrame with duplicate rows removed
+limit				Returns a new DataFrame by taking the first n rows
+groupBy				Groups the DataFrame using the specified columns, so we can run aggregation on them
+40.Subset columns
+-->Select
+devices_df = events_df.select("user_id", "device")
+display(devices_df)
+from pyspark.sql.functions import col
+
+locations_df = events_df.select(
+    "user_id", 
+    col("geo.city").alias("city"), 
+    col("geo.state").alias("state")
+)
+display(locations_df)
+-->selectExpr()
+apple_df = events_df.selectExpr("user_id", "device in ('macOS', 'iOS') as apple_user")
+display(apple_df)
+-->drop()
+anonymous_df = events_df.drop("user_id", "geo", "device")
+display(anonymous_df)
+no_sales_df = events_df.drop(col("ecommerce"))
+display(no_sales_df)
+-->withColumn()
+mobile_df = events_df.withColumn("mobile", col("device").isin("iOS", "Android"))
+display(mobile_df)
+purchase_quantity_df = events_df.withColumn("purchase_quantity", col("ecommerce.total_item_quantity").cast("int"))
+purchase_quantity_df.printSchema()
+-->withColumnRenamed()
+location_df = events_df.withColumnRenamed("geo", "location")
+display(location_df)
+41.Subset of Rows
+-->filter()
+purchases_df = events_df.filter("ecommerce.total_item_quantity > 0")
+display(purchases_df)
+revenue_df = events_df.filter(col("ecommerce.purchase_revenue_in_usd").isNotNull())
+display(revenue_df)
+android_df = events_df.filter((col("traffic_source") != "direct") & (col("device") == "Android"))
+display(android_df)
+-->dropDuplicates()
+display(events_df.distinct())
+distinct_users_df = events_df.dropDuplicates(["user_id"])
+display(distinct_users_df)
+-->limit
+limit_df = events_df.limit(100)
+display(limit_df)
+42.sort()
+-->sort
+increase_timestamps_df = events_df.sort("event_timestamp")
+display(increase_timestamps_df)
+decrease_timestamp_df = events_df.sort(col("event_timestamp").desc())
+display(decrease_timestamp_df)
+decrease_sessions_df = events_df.sort(col("user_first_touch_timestamp").desc(), col("event_timestamp"))
+display(decrease_sessions_df)
+-->orderBy
+increase_sessions_df = events_df.orderBy(["user_first_touch_timestamp", "event_timestamp"])
+display(increase_sessions_df)
+43.groupBy()
+Use the DataFrame groupBy method to create a grouped data object.
+This grouped data object is called RelationalGroupedDataset in Scala and GroupedData in Python.
+df.groupBy("event_name") or df.groupBy("geo.state", "geo.city")
+Grouped data methods
+
+Method	Description
+agg	Compute aggregates by specifying a series of aggregate columns
+avg	Compute the mean value for each numeric columns for each group
+count	Count the number of rows for each group
+max	Compute the max value for each numeric columns for each group
+mean	Compute the average value for each numeric columns for each group
+min	Compute the min value for each numeric column for each group
+pivot	Pivots a column of the current DataFrame and performs the specified aggregation
+sum	Compute the sum for each numeric columns for each group
+
+event_counts_df = df.groupBy("event_name").count()
+avg_state_purchases_df = df.groupBy("geo.state").avg("ecommerce.purchase_revenue_in_usd")
+city_purchase_quantities_df = df.groupBy("geo.state", "geo.city").sum("ecommerce.total_item_quantity", "ecommerce.purchase_revenue_in_usd")
+44.Aggregate Functions
+Here are some of the built-in functions available for aggregation.
+
+Method			Description
+approx_count_distinct	Returns the approximate number of distinct items in a group
+avg			Returns the average of the values in a group
+collect_list		Returns a list of objects with duplicates
+corr			Returns the Pearson Correlation Coefficient for two columns
+max			Compute the max value for each numeric columns for each group
+mean			Compute the average value for each numeric columns for each group
+stddev_samp		Returns the sample standard deviation of the expression in a group
+sumDistinct		Returns the sum of distinct values in the expression
+var_pop			Returns the population variance of the values in a group
+
+Use the grouped data method agg to apply built-in aggregate functions
+
+This allows you to apply other transformations on the resulting columns, such as alias.
+--from pyspark.sql.functions import sum
+
+state_purchases_df = df.groupBy("geo.state").agg(sum("ecommerce.total_item_quantity").alias("total_purchases"))
+display(state_purchases_df)
+
+--from pyspark.sql.functions import avg, approx_count_distinct
+
+state_aggregates_df = (df
+                       .groupBy("geo.state")
+                       .agg(avg("ecommerce.total_item_quantity").alias("avg_quantity"),
+                            approx_count_distinct("user_id").alias("distinct_users"))
+                      )
+
+display(state_aggregates_df)
+45.Math Functions
+Here are some of the built-in functions for math operations.
+
+Method	Description
+ceil	Computes the ceiling of the given column.
+cos	Computes the cosine of the given value.
+log	Computes the natural logarithm of the given value.
+round	Returns the value of the column e rounded to 0 decimal places with HALF_UP round mode.
+sqrt	Computes the square root of the specified float value.
+
+from pyspark.sql.functions import cos, sqrt
+
+display(spark.range(10)  # Create a DataFrame with a single column called "id" with a range of integer values
+        .withColumn("sqrt", sqrt("id"))
+        .withColumn("cos", cos("id"))
+       )
+46. Built-In Functions: Date Time Functions
+Here are a few built-in functions to manipulate dates and times in Spark.
+
+Method			Description
+add_months		Returns the date that is numMonths after startDate
+current_timestamp	Returns the current timestamp at the start of query evaluation as a timestamp column
+date_format		Converts a date/timestamp/string to a value of string in the format specified by the date format given by the second argument.
+dayofweek		Extracts the day of the month as an integer from a given date/timestamp/string
+from_unixtime		Converts the number of seconds from unix epoch (1970-01-01 00:00:00 UTC) to a string representing the timestamp of that moment in the current system time zone in the yyyy-MM-dd HH:mm:ss format
+minute			Extracts the minutes as an integer from a given date/timestamp/string.
+unix_timestamp		Converts time string with given pattern to Unix timestamp (in seconds)
+--Cast to Timestamp using cast()
+timestamp_df = df.withColumn("timestamp", (col("timestamp") / 1e6).cast("timestamp"))
+display(timestamp_df)
+
+from pyspark.sql.types import TimestampType
+
+timestamp_df = df.withColumn("timestamp", (col("timestamp") / 1e6).cast(TimestampType()))
+display(timestamp_df)
+47. Datetime Patterns for Formatting and Parsing
+There are several common scenarios for datetime usage in Spark:
+
+CSV/JSON datasources use the pattern string for parsing and formatting datetime content.
+Datetime functions related to convert StringType to/from DateType or TimestampType e.g. unix_timestamp, date_format, from_unixtime, to_date, to_timestamp, etc.
+Spark uses pattern letters for date and timestamp parsing and formatting. A subset of these patterns are shown below.
+
+Symbol	Meaning		Presentation	Examples
+G	era		text		AD; Anno Domini
+y	year		year		2020; 20
+D	day-of-year	number(3)	189
+M/L	month-of-year	month	7; 07; Jul; July
+d	day-of-month	number(3)	28
+Q/q	quarter-of-year	number/text	3; 03; Q3; 3rd quarter
+E	day-of-week	text		Tue; Tuesday
+
+--Format date using date_format()
+
+from pyspark.sql.functions import date_format
+
+formatted_df = (timestamp_df
+                .withColumn("date string", date_format("timestamp", "MMMM dd, yyyy"))
+                .withColumn("time string", date_format("timestamp", "HH:mm:ss.SSSSSS"))
+               )
+display(formatted_df)
+
+--Extract datetime attribute from timestamp
+
+from pyspark.sql.functions import year, month, dayofweek, minute, second
+
+datetime_df = (timestamp_df
+               .withColumn("year", year(col("timestamp")))
+               .withColumn("month", month(col("timestamp")))
+               .withColumn("dayofweek", dayofweek(col("timestamp")))
+               .withColumn("minute", minute(col("timestamp")))
+               .withColumn("second", second(col("timestamp")))
+              )
+display(datetime_df)
+
+--Convert to Date using to_Date()
+from pyspark.sql.functions import to_date
+
+date_df = timestamp_df.withColumn("date", to_date(col("timestamp")))
+display(date_df)
+
+--Manipulate Datetimes using date_add()
+from pyspark.sql.functions import date_add
+
+plus_2_df = timestamp_df.withColumn("plus_two_days", date_add(col("timestamp"), 2))
+display(plus_2_df)
+
+--Get average number of active users by day of week
+
+from pyspark.sql.functions import year, month, dayofweek, date_format, avg
+active_dow_df = (active_users_df.withColumn("day",date_format( col("date"),"E")).groupBy("day").agg(avg("active_users").alias("avg_users"))
+)
+display(active_dow_df)
+
+48. Complex Types
+
+->String Functions
+Here are some of the built-in functions available for manipulating strings.
+
+Method		Description
+translate	Translate any character in the src by a character in replaceString
+regexp_replace	Replace all substrings of the specified string value that match regexp with rep
+regexp_extract	Extract a specific group matched by a Java regex, from the specified string column
+ltrim		Removes the leading space characters from the specified string column
+lower		Converts a string column to lowercase
+split		Splits str around matches of the given pattern
+
+display(df.select(split(df.email, '@', 0).alias('email_handle')))
+
+->Collection Functions
+Here are some of the built-in functions available for working with arrays.
+
+Method		Description
+array_contains	Returns null if the array is null, true if the array contains value, and false otherwise.
+element_at	Returns element of array at given index. Array elements are numbered starting with 1.
+explode	Creates a new row for each element in the given array or map column.
+collect_set	Returns a set of objects with duplicate elements eliminated.
+
+mattress_df = (details_df
+               .filter(array_contains(col("details"), "Mattress"))
+               .withColumn("size", element_at(col("details"), 2)))
+display(mattress_df)
+
+->Aggregate Functions
+Here are some of the built-in aggregate functions available for creating arrays, typically from GroupedData.
+
+Method		Description
+collect_list	Returns an array consisting of all values within the group.
+collect_set	Returns an array consisting of all unique values within the group.
+
+size_df = mattress_df.groupBy("email").agg(collect_set("size").alias("size options"))
+
+display(size_df)
+
+->Union and unionByName
+Warning The DataFrame union method resolves columns by position, as in standard SQL. 
+You should use it only if the two DataFrames have exactly the same schema, including the column order. 
+In contrast, the DataFrame unionByName method resolves columns by name. 
+This is equivalent to UNION ALL in SQL. Neither one will remove duplicates.
+
+Below is a check to see if the two dataframes have a matching schema where union would be appropriate
+
+mattress_df.schema==size_df.schema
+
+union_count = mattress_df.select("email").union(size_df.select("email")).count()
+
+mattress_count = mattress_df.count()
+size_count = size_df.count()
+
+mattress_count + size_count == union_count
+
+49. Additional Functions
+
+->Non-aggregate and Miscellaneous Functions
+Here are a few additional non-aggregate and miscellaneous built-in functions.
+
+Method		Description
+col / column	Returns a Column based on the given column name.
+lit		Creates a Column of literal value
+isnull		Return true iff the column is null
+rand		Generate a random column with independent and identically distributed (i.i.d.) samples uniformly distributed in [0.0, 1.0]
+-->We could select a particular column using the col function
+gmail_accounts = sales_df.filter(col("email").contains("gmail"))
+
+display(gmail_accounts)
+
+-->lit can be used to create a column out of a value, which is useful for appending columns.
+display(gmail_accounts.select("email", lit(True).alias("gmail user")))
+
+-->DataFrameNaFunctions
+DataFrameNaFunctions is a DataFrame submodule with methods for handling null values. 
+Obtain an instance of DataFrameNaFunctions by accessing the na attribute of a DataFrame.
+
+Method	Description
+drop	Returns a new DataFrame omitting rows with any, all, or a specified number of null values, considering an optional subset of columns
+fill	Replace null values with the specified value for an optional subset of columns
+replace	Returns a new DataFrame replacing a value with another value, considering an optional subset of columns
+
+sales_exploded_df = sales_df.withColumn("items", explode(col("items")))
+display(sales_exploded_df.select("items.coupon"))
+print(sales_exploded_df.select("items.coupon").count())
+print(sales_exploded_df.select("items.coupon").na.drop().count())
+
+We can fill in the missing coupon codes with na.fill
+display(sales_exploded_df.select("items.coupon").na.fill("NO COUPON"))
+
+50.Joining DataFrames
+The DataFrame join method joins two DataFrames based on a given join expression.
+
+Several different types of joins are supported:
+
+Inner join based on equal values of a shared column called "name" (i.e., an equi join)
+df1.join(df2, "name")
+
+Inner join based on equal values of the shared columns called "name" and "age"
+df1.join(df2, ["name", "age"])
+
+Full outer join based on equal values of a shared column called "name"
+df1.join(df2, "name", "outer")
+
+Left outer join based on an explicit column expression
+df1.join(df2, df1["customer_name"] == df2["account_name"], "left_outer")
+
+users_df = spark.read.format("delta").load(users_path)
+display(users_df)
+
+joined_df = gmail_accounts.join(other=users_df, on='email', how = "inner")
+display(joined_df)
+
+51. User-Defined Functions
+-->A custom column transformation function
+
+Can’t be optimized by Catalyst Optimizer
+Function is serialized and sent to executors
+Row data is deserialized from Spark's native binary format to pass to the UDF, and the results are serialized back into Spark's native format
+For Python UDFs, additional interprocess communication overhead between the executor and a Python interpreter running on each worker node
+
+-->Define a function (on the driver) to get the first letter of a string from the email field.
+def first_letter_function(email):
+    return email[0]
+
+first_letter_function("annagray@kaufman.com")
+
+-->Create and Apply UDF
+first_letter_udf = udf(first_letter_function)
+
+from pyspark.sql.functions import col
+
+display(sales_df.select(first_letter_udf(col("email"))))
+
+-->Register UDF to use in SQL
+Register the UDF using spark.udf.register to also make it available for use in the SQL namespace.
+
+sales_df.createOrReplaceTempView("sales")
+
+first_letter_udf = spark.udf.register("sql_udf", first_letter_function)
+# You can still apply the UDF from Python
+display(sales_df.select(first_letter_udf(col("email"))))
+%sql
+-- You can now also apply the UDF from SQL
+SELECT sql_udf(email) AS first_letter FROM sales
+
+-->Use Decorator Syntax (Python Only)
+Alternatively, you can define and register a UDF using Python decorator syntax. The @udf decorator parameter is the Column datatype the function returns.
+
+You will no longer be able to call the local Python function (i.e., first_letter_udf("annagray@kaufman.com") will not work).
+
+Note This example also uses Python type hints, which were introduced in Python 3.5. 
+Type hints are not required for this example, but instead serve as "documentation" to help developers use the function correctly. 
+They are used in this example to emphasize that the UDF processes one record at a time, taking a single str argument and returning a str value.
+@udf("string")
+def first_letter_udf(email: str) -> str:
+    return email[0]
+
+from pyspark.sql.functions import col
+ 
+sales_df = spark.read.format("delta").load(f"{datasets_dir}/sales/sales.delta")
+display(sales_df.select(first_letter_udf(col("email"))))
+
+52.Pandas/Vectorized UDFs
+Pandas UDFs are available in Python to improve the efficiency of UDFs. Pandas UDFs utilize Apache Arrow to speed up computation.
+The user-defined functions are executed using:
+
+Apache Arrow, an in-memory columnar data format that is used in Spark to efficiently transfer data between JVM and Python processes with near-zero (de)serialization cost
+Pandas inside the function, to work with Pandas instances and APIs
+
+import pandas as pd
+from pyspark.sql.functions import pandas_udf
+
+# We have a string input/output
+@pandas_udf("string")
+def vectorized_udf(email: pd.Series) -> pd.Series:
+    return email.str[0]
+
+# Alternatively
+# def vectorized_udf(email: pd.Series) -> pd.Series:
+#     return email.str[0]
+# vectorized_udf = pandas_udf(vectorized_udf, "string")
+
+display(sales_df.select(vectorized_udf(col("email"))))
+
+spark.udf.register("sql_vectorized_udf", vectorized_udf)
+
+%sql
+-- Use the Pandas UDF from SQL
+SELECT sql_vectorized_udf(email) AS firstLetter FROM sales
+
+53. Transformation
+Narrow: filter,union,select, cast
+Wide:	sort, join, groupBy, distinct
+
+shuffule introduces stage boundaries
+
+stage-1--> 	read
+		select
+		filter	 
+----------------groupBy--Shuffle Write, Shuffle Read
+stage-2-->	filter
+		write
+
+54. Query Optimization
+
+-->Logical optimizations:
+explain(..) prints the query plans, optionally formatted by a given explain mode. 
+Compare the following logical plan & physical plan, noting how Catalyst handled the multiple filter transformations.
+-->Caching:
+By default the data of a DataFrame is present on a Spark cluster only while it is being processed during a query 
+-- it is not automatically persisted on the cluster afterwards. 
+(Spark is a data processing engine, not a data storage system.) 
+You can explicity request Spark to persist a DataFrame on the cluster by invoking its cache method.
+
+If you do cache a DataFrame, you should always explictly evict it from cache by invoking unpersist when you no longer need it.
+
+Best Practice Caching a DataFrame can be appropriate if you are certain that you will use the same DataFrame multiple times, as in:
+
+Exploratory data analysis
+Machine learning model training
+Warning Aside from those use cases, you should not cache DataFrames because it is likely that you'll degrade the performance of your application.
+
+Caching consumes cluster resources that could otherwise be used for task execution
+Caching can prevent Spark from performing query optimizations because caching the data before filtering eliminates 
+the possibility for the predicate push down.
+-->Predicate Pushdown:
+
+jdbc_url = "jdbc:postgresql://54.213.33.240/training"
+
+# Username and Password w/read-only rights
+conn_properties = {
+    "user" : "training",
+    "password" : "training"
+}
+
+pp_df = (spark
+         .read
+         .jdbc(url=jdbc_url,                 # the JDBC URL
+               table="training.people_1m",   # the name of the table
+               column="id",                  # the name of a column of an integral type that will be used for partitioning
+               lowerBound=1,                 # the minimum value of columnName used to decide partition stride
+               upperBound=1000000,           # the maximum value of columnName used to decide partition stride
+               numPartitions=8,              # the number of partitions/connections
+               properties=conn_properties    # the connection properties
+              )
+         .filter(col("gender") == "M")   # Filter the data by gender
+        )
+
+pp_df
+== Parsed Logical Plan ==
+'Filter ('gender = M)
++- Relation [id#444,firstName#445,middleName#446,lastName#447,gender#448,birthDate#449,ssn#450,salary#451] JDBCRelation(training.people_1m) [numPartitions=8]
+
+== Analyzed Logical Plan ==
+id: int, firstName: string, middleName: string, lastName: string, gender: string, birthDate: timestamp, ssn: string, salary: int
+Filter (gender#448 = M)
++- Relation [id#444,firstName#445,middleName#446,lastName#447,gender#448,birthDate#449,ssn#450,salary#451] JDBCRelation(training.people_1m) [numPartitions=8]
+
+== Optimized Logical Plan ==
+Filter (isnotnull(gender#448) AND (gender#448 = M))
++- Relation [id#444,firstName#445,middleName#446,lastName#447,gender#448,birthDate#449,ssn#450,salary#451] JDBCRelation(training.people_1m) [numPartitions=8]
+
+== Physical Plan ==
+*(1) Scan JDBCRelation(training.people_1m) [numPartitions=8] [id#444,firstName#445,middleName#446,lastName#447,gender#448,birthDate#449,ssn#450,salary#451] PushedFilters: [*IsNotNull(gender), *EqualTo(gender,M)], ReadSchema: struct<id:int,firstName:string,middleName:string,lastName:string,gender:string,birthDate:timestam...
+
+Note the lack of a Filter and the presence of a PushedFilters in the Scan. The filter operation is pushed to the database and only the matching records are sent to Spark. This can greatly reduce the amount of data that Spark needs to ingest.
+-->No predicate pushdown
+cached_df = (spark
+            .read
+            .jdbc(url=jdbc_url,
+                  table="training.people_1m",
+                  column="id",
+                  lowerBound=1,
+                  upperBound=1000000,
+                  numPartitions=8,
+                  properties=conn_properties
+                 )
+            )
+
+cached_df.cache()
+filtered_df = cached_df.filter(col("gender") == "M")
+
+filtered_df.explain(True)
+== Parsed Logical Plan ==
+'Filter ('gender = M)
++- Relation [id#460,firstName#461,middleName#462,lastName#463,gender#464,birthDate#465,ssn#466,salary#467] JDBCRelation(training.people_1m) [numPartitions=8]
+
+== Analyzed Logical Plan ==
+id: int, firstName: string, middleName: string, lastName: string, gender: string, birthDate: timestamp, ssn: string, salary: int
+Filter (gender#464 = M)
++- Relation [id#460,firstName#461,middleName#462,lastName#463,gender#464,birthDate#465,ssn#466,salary#467] JDBCRelation(training.people_1m) [numPartitions=8]
+
+== Optimized Logical Plan ==
+Filter (isnotnull(gender#464) AND (gender#464 = M))
++- InMemoryRelation [id#460, firstName#461, middleName#462, lastName#463, gender#464, birthDate#465, ssn#466, salary#467], StorageLevel(disk, memory, deserialized, 1 replicas)
+      +- *(1) Scan JDBCRelation(training.people_1m) [numPartitions=8] [id#460,firstName#461,middleName#462,lastName#463,gender#464,birthDate#465,ssn#466,salary#467] PushedFilters: [], ReadSchema: struct<id:int,firstName:string,middleName:string,lastName:string,gender:string,birthDate:timestam...
+
+== Physical Plan ==
+*(1) Filter (isnotnull(gender#464) AND (gender#464 = M))
++- InMemoryTableScan [id#460, firstName#461, middleName#462, lastName#463, gender#464, birthDate#465, ssn#466, salary#467], [isnotnull(gender#464), (gender#464 = M)]
+      +- InMemoryRelation [id#460, firstName#461, middleName#462, lastName#463, gender#464, birthDate#465, ssn#466, salary#467], StorageLevel(disk, memory, deserialized, 1 replicas)
+            +- *(1) Scan JDBCRelation(training.people_1m) [numPartitions=8] [id#460,firstName#461,middleName#462,lastName#463,gender#464,birthDate#465,ssn#466,salary#467] PushedFilters: [], ReadSchema: struct<id:int,firstName:string,middleName:string,lastName:string,gender:string,birthDate:timestam...
+
+In addition to the Scan (the JDBC read) we saw in the previous example, here we have the InMemoryTableScan followed by a Filter in the explain plan.
+
+This means Spark had to read ALL the data from the database and cache it, and then scan it in cache to find the records matching the filter condition
+
+55. Partitioning:
+-->Objectives
+Get partitions and cores
+Repartition DataFrames
+Configure default shuffle partitions
+-->Methods
+DataFrame: repartition, coalesce, rdd.getNumPartitions
+SparkConf: get, set
+SparkSession: spark.sparkContext.defaultParallelism
+SparkConf Parameters
+spark.sql.shuffle.partitions, spark.sql.adaptive.enabled
+-->Get partitions and cores
+Use the rdd method getNumPartitions to get the number of DataFrame partitions.
+df = spark.read.format("delta").load(events_path)
+df.rdd.getNumPartitions()
+
+Access SparkContext through SparkSession to get the number of cores or slots.
+
+Use the defaultParallelism attribute to get the number of cores in a cluster.
+print(spark.sparkContext.defaultParallelism)
+
+56.Repartition DataFrame:
+There are two methods available to repartition a DataFrame: repartition and coalesce.
+-->repartition
+Returns a new DataFrame that has exactly n partitions.
+
+Wide transformation
+Pro: Evenly balances partition sizes
+Con: Requires shuffling all data
+
+repartitioned_df = df.repartition(8)
+repartitioned_df.rdd.getNumPartitions()
+-->coalesce
+Returns a new DataFrame that has exactly n partitions, when fewer partitions are requested.
+
+If a larger number of partitions is requested, it will stay at the current number of partitions.
+
+Narrow transformation, some partitions are effectively concatenated
+Pro: Requires no shuffling
+Cons:
+Is not able to increase # partitions
+Can result in uneven partition sizes
+
+coalesce_df = df.coalesce(8)
+coalesce_df.rdd.getNumPartitions()
+
+57.Configure default shuffle partitions
+Use the SparkSession's conf attribute to get and set dynamic Spark configuration properties. 
+The spark.sql.shuffle.partitions property determines the number of partitions that result from a shuffle. Let's check its default value:
+spark.conf.get("spark.sql.shuffle.partitions")
+
+Assuming that the data set isn't too large, you could configure the default number of shuffle partitions to match the number of cores:
+
+spark.conf.set("spark.sql.shuffle.partitions", spark.sparkContext.defaultParallelism)
+print(spark.conf.get("spark.sql.shuffle.partitions"))
+
+58.Partitioning Guidelines
+Make the number of partitions a multiple of the number of cores
+Target a partition size of ~200MB
+Size default shuffle partitions by dividing largest shuffle stage input by the target partition size (e.g., 4TB / 200MB = 20,000 shuffle partition count)
+Note When writing a DataFrame to storage, the number of DataFrame partitions determines the number of data files written. 
+(This assumes that Hive partitioning is not used for the data in storage. A discussion of DataFrame partitioning vs Hive partitioning is beyond the scope of this class.)
+
+59.Adaptive Query Execution
+In Spark 3, AQE is now able to dynamically coalesce shuffle partitions at runtime. 
+This means that you can set spark.sql.shuffle.partitions based on the largest data set your application processes 
+and allow AQE to reduce the number of partitions automatically when there is less data to process.
+
+The spark.sql.adaptive.enabled configuration option controls whether AQE is turned on/off.
+
+spark.conf.get("spark.sql.adaptive.enabled")
+
+60. Read from Text file:
+Task-->The file contains data about people, including:
+first, middle and last names
+gender
+birth date
+Social Security number
+salary
+But, as is unfortunately common in data we get from this customer, the file contains some duplicate records. Worse:
+
+In some of the records, the names are mixed case (e.g., "Carol"), while in others, they are uppercase (e.g., "CAROL").
+The Social Security numbers aren't consistent either. Some of them are hyphenated (e.g., "992-83-4829"), while others are missing hyphens ("992834829").
+If all of the name fields match -- if you disregard character case -- then the birth dates and salaries are guaranteed to match as well, and the Social Security Numbers would match if they were somehow put in the same format.
+
+Your job is to remove the duplicate records. The specific requirements of your job are:
+
+Remove duplicates. It doesn't matter which record you keep; it only matters that you keep one of them.
+Preserve the data format of the columns. For example, if you write the first name column in all lowercase, you haven't met this requirement.
+
+
+Solution:
+source_file = f"{datasets_dir}/people/people-with-dups.txt"
+delta_dest_dir = working_dir + "/people"
+
+# In case it already exists
+dbutils.fs.rm(delta_dest_dir, True)
+ddl_schema = "firstName string,middleName string,lastName string,gender string, birthDate string,salary string, SSN string"
+# Complete your work here...
+df=(spark
+           .read
+           .option("sep", ":")
+           .option("header", True)
+           .schema(ddl_schema)
+           .csv(source_file))
+from pyspark.sql.functions import initcap, col, regexp_replace
+transformdf=(df.withColumn("firstName",initcap(col("firstName")))
+.withColumn("middleName",initcap(col("middleName")))
+.withColumn("lastName",initcap(col("lastName")))
+.withColumn("SSN",regexp_replace('SSN','-',''))
+.dropDuplicates())
+(transformdf
+ .coalesce(1)
+ .write
+ .format("delta")
+ .mode("overwrite")
+ .save(delta_dest_dir))
