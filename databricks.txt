@@ -943,3 +943,277 @@ transformdf=(df.withColumn("firstName",initcap(col("firstName")))
  .format("delta")
  .mode("overwrite")
  .save(delta_dest_dir))
+
+61. Streaming Query
+-->Objectives
+1.Build streaming DataFrames:
+
+>Obtain an initial streaming DataFrame from a Delta-format file source.
+df = (spark
+      .readStream
+      .option("maxFilesPerTrigger", 1)
+      .format("delta")
+      .load(events_path)
+     )
+
+df.isStreaming
+
+2.Display streaming query results
+>Apply some transformations, producing new streaming DataFrames.
+from pyspark.sql.functions import col, approx_count_distinct, count
+
+email_traffic_df = (df
+                    .filter(col("traffic_source") == "email")
+                    .withColumn("mobile", col("device").isin(["iOS", "Android"]))
+                    .select("user_id", "event_timestamp", "mobile")
+                   )
+
+email_traffic_df.isStreaming
+3.Write streaming query results
+>Take the final streaming DataFrame (our result table) and write it to a file sink in "append" mode.
+checkpoint_path = f"{working_dir}/email_traffic/checkpoint"
+output_path = f"{working_dir}/email_traffic/output"
+
+devices_query = (email_traffic_df
+                 .writeStream
+                 .outputMode("append")
+                 .format("delta")
+                 .queryName("email_traffic")
+                 .trigger(processingTime="1 second")
+                 .option("checkpointLocation", checkpoint_path)
+                 .start(output_path)
+                )
+
+4.Monitor streaming query
+-Use the streaming query "handle" to monitor and control it.
+>devices_query.id
+>devices_query.status
+>devices_query.lastProgress
+>import time
+# Run for 10 more seconds
+time.sleep(10) 
+
+devices_query.stop()
+>devices_query.awaitTermination()
+
+-->Classes
+DataStreamReader
+DataStreamWriter
+StreamingQuery
+
+62. Streaming Lab 1:
+
+schema = "device STRING, ecommerce STRUCT<purchase_revenue_in_usd: DOUBLE, total_item_quantity: BIGINT, unique_items: BIGINT>, event_name STRING, event_previous_timestamp BIGINT, event_timestamp BIGINT, geo STRUCT<city: STRING, state: STRING>, items ARRAY<STRUCT<coupon: STRING, item_id: STRING, item_name: STRING, item_revenue_in_usd: DOUBLE, price_in_usd: DOUBLE, quantity: BIGINT>>, traffic_source STRING, user_first_touch_timestamp BIGINT, user_id STRING"
+
+# Directory of hourly events logged from the BedBricks website on July 3, 2020
+hourly_events_path = f"{datasets_dir}/events/events-2020-07-03.json"
+
+df = (spark
+      .readStream
+      .schema(schema)
+      .option("maxFilesPerTrigger", 1)
+      .json(hourly_events_path)
+     )
+
+Q> Cast to timestamp and add watermark for 2 hours
+Add a createdAt column by dividing event_timestamp by 1M and casting to timestamp
+Set a watermark of 2 hours on the createdAt column
+Assign the resulting DataFrame to events_df.
+
+Ans:from pyspark.sql.functions import col, explode
+# Watermarking is a feature in Spark Structured Streaming that is used to handle the data that arrives late. Spark Structured Streaming can maintain the state of the data that arrives, store it in memory, and update it accurately by aggregating it with the data that arrived late.#
+
+events_df = (df.withColumn("createdAt",(col("event_timestamp")/1e6).cast("timestamp"))
+             .withWatermark("createdAt", "2 hours")
+            )
+
+Q> Aggregate active users by traffic source for 1 hour windows
+Set the default shuffle partitions to the number of cores on your cluster
+Group by traffic_source with 1-hour tumbling windows based on the createdAt column
+Aggregate the approximate count of distinct users per traffic_source and alias the resulting column to active_users
+Select traffic_source, active_users, and the hour extracted from window.start with an alias of hour
+Sort by hour in ascending order Assign the resulting DataFrame to traffic_df.
+
+Ans:from pyspark.sql.functions import col, approx_count_distinct, window, hour
+# TODO
+spark.conf.set("spark.sql.shuffle.partitions", sc.defaultParallelism)
+
+traffic_df = (events_df
+              .groupBy(window(col("createdAt"),"1 hour"),col("traffic_source"))
+              .agg(approx_count_distinct("traffic_source").alias("active_users"))
+              .select("traffic_source","active_users",hour(col("window.start")).alias("hour"))
+              .sort(col("hour"))
+)
+
+Q>Execute query with display() and plot results
+Use display to start traffic_df as a streaming query and display the resulting memory sink
+Assign "hourly_traffic" as the name of the query by setting the streamName parameter of display
+Plot the streaming query results as a bar graph
+Configure the following plot options:
+Keys: hour
+Series groupings: traffic_source
+Values: active_users
+
+Ans:display(traffic_df,streamName="hourly_traffic")
+
+Q>Manage streaming query
+Iterate over SparkSession's list of active streams to find one with name "hourly_traffic"
+Stop the streaming query
+
+Ans:until_stream_is_ready("hourly_traffic")
+
+for s in spark.streams.active:
+    if(s.name=="hourly_traffic"):
+          s.stop()
+
+63. Streaming Lab 2:
+
+Q>1. Read data stream
+Set to process 1 file per trigger
+Read from Delta with filepath stored in events_path
+
+Ans:df = (spark
+      .readStream
+      .format("delta")
+      .option("maxFilesPerTrigger", 1)
+      .load(events_path))
+
+df.isStreaming
+
+Q>2. Get active users by traffic source
+Set default shuffle partitions to number of cores on your cluster (not required, but runs faster)
+Group by traffic_source
+Aggregate the approximate count of distinct users and alias with "active_users"
+Sort by traffic_source
+
+Ans:from pyspark.sql.functions import col, approx_count_distinct
+spark.conf.set("spark.sql.shuffle.partitions", sc.defaultParallelism)
+
+traffic_df = df.groupBy("traffic_source").agg(approx_count_distinct(col("user_id")).alias("active_users")).sort(col("traffic_source"))
+
+Q>3.Execute query with display() and plot results
+Execute results for traffic_df using display()
+Plot the streaming query results as a bar graph
+
+Ans:display(traffic_df)
+
+Q>4. Execute the same streaming query with DataStreamWriter
+Name the query "active_users_by_traffic"
+Set to "memory" format and "complete" output mode
+Set a trigger interval of 1 second
+
+Ans:traffic_query = (traffic_df.writeStream
+                     .outputMode("complete")
+                     .format("memory")
+                     .queryName("active_users_by_traffic")
+                     .trigger(processingTime="1 second")
+                     .start()
+)
+
+Q>5. View results being updated in the query table
+
+Ans:%sql
+select * from active_users_by_traffic
+
+Q>6. List and stop all active streams
+Use SparkSession to get list of all active streams
+Iterate over the list and stop each query
+
+Ans:for s in spark.streams.active:
+          s.stop()
+
+64. Delta Lake:
+
+>Create a Delta Table
+events_df = spark.read.format("parquet").load(f"{datasets_dir}/events/events.parquet")
+display(events_df)
+
+>Write the data in Delta format to the directory given by delta_path.
+delta_path = f"{working_dir}/delta-events"
+events_df.write.format("delta").mode("overwrite").save(delta_path)
+
+>Write the data in Delta format as a managed table in the metastore.
+events_df.write.format("delta").mode("overwrite").saveAsTable("delta_events")
+
+>As with other file formats, Delta supports partitioning your data in storage using the unique values in a specified column (often referred to as "Hive partitioning").
+Let's overwrite the Delta dataset in the delta_path directory to partition by state. This can accelerate queries that filter by state.
+
+from pyspark.sql.functions import col
+
+state_events_df = events_df.withColumn("state", col("geo.state"))
+state_events_df.write.format("delta").mode("overwrite").partitionBy("state").option("overwriteSchema", "true").save(delta_path)
+
+>Understand the Transaction Log
+We can see how Delta stores the different state partitions in separate directories.
+
+Additionally, we can also see a directory called _delta_log, which is the transaction log.
+
+When a Delta Lake dataset is created, its transaction log is automatically created in the _delta_log subdirectory.
+
+display(dbutils.fs.ls(delta_path))
+display(dbutils.fs.ls(f"{delta_path}/_delta_log/"))
+
+>Next, let's take a look at a transaction log File.
+
+The four columns each represent a different part of the very first commit to the Delta Table, creating the table.
+
+The add column has statistics about the DataFrame as a whole and individual columns.
+The commitInfo column has useful information about what the operation was (WRITE or READ) and who executed the operation.
+The metaData column contains information about the column schema.
+The protocol version contains information about the minimum Delta version necessary to either write or read to this Delta Table.
+
+display(spark.read.json(f"{delta_path}/_delta_log/00000000000000000000.json"))
+
+>One key difference between these two transaction logs is the size of the JSON file, this file has 206 rows compared to the previous 7.
+
+To understand why, let's take a look at the commitInfo column. We can see that in the operationParameters section, 
+partitionBy has been filled in by the state column. 
+Furthermore, if we look at the add section on row 3, we can see that a new section called partitionValues has appeared. 
+As we saw above, Delta stores partitions separately in memory, however, 
+it stores information about these partitions in the same transaction log file.
+
+display(spark.read.json(f"{delta_path}/_delta_log/00000000000000000001.json"))
+
+Finally, let's take a look at the files inside one of the state partitions. The files inside corresponds to the partition commit (file 01) in the _delta_log directory.
+
+display(dbutils.fs.ls(f"{delta_path}/state=CA/"))
+
+>Read from your Delta table
+df = spark.read.format("delta").load(delta_path)
+display(df)
+
+>Update your Delta Table
+Let's filter for rows where the event takes place on a mobile device.
+
+df_update = state_events_df.filter(col("device").isin(["Android", "iOS"]))
+display(df_update)
+
+df_update.write.format("delta").mode("overwrite").save(delta_path)
+
+df = spark.read.format("delta").load(delta_path)
+display(df)
+
+>Access previous versions of table using Time Travel
+Oops, it turns out we actually we need the entire dataset! You can access a previous version of your Delta Table using Time Travel. 
+Use the following two cells to access your version history. 
+Delta Lake will keep a 30 day version history by default, but if necessary, Delta can store a version history for longer.
+
+spark.sql("DROP TABLE IF EXISTS train_delta")
+spark.sql(f"CREATE TABLE train_delta USING DELTA LOCATION '{delta_path}'")
+
+%sql
+DESCRIBE HISTORY train_delta
+
+>Using the versionAsOf option allows you to easily access previous versions of our Delta Table.
+df = spark.read.format("delta").option("versionAsOf", 0).load(delta_path)
+display(df)
+
+>You can also access older versions using a timestamp.
+Replace the timestamp string with the information from your version history.
+
+time_stamp_string = "2022-09-15 10:39:07"
+df = spark.read.format("delta").option("timestampAsOf", time_stamp_string).load(delta_path)
+display(df)
+
+>Vacuum
+Now that we're happy with our Delta Table, we can clean up our directory using VACUUM. Vacuum accepts a retention period in hours as an input.
